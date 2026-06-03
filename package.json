@@ -1,0 +1,40 @@
+{
+  "name": "mqtt-explorer",
+  "version": "1.0.0",
+  "description": "MQTT Explorer – a structured MQTT client",
+  "main": "out/main/index.js",
+  "author": "Raul Rivero <rivero@raulrivero.es>",
+  "homepage": "https://www.raulrivero.es/",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "npm run dev",
+    "pack": "electron-vite build && electron-builder --dir",
+    "dist": "electron-vite build && electron-builder",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "dist:all": "electron-vite build && electron-builder --mac --win --linux"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.3",
+    "electron-store": "^8.2.0",
+    "mqtt": "^5.6.0",
+    "react": "^18.3.1",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^6.0.2",
+    "electron": "^42.3.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.4.5",
+    "vite": "^8.0.14"
+  }
+}
