@@ -16,7 +16,8 @@
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:linux": "electron-vite build && electron-builder --linux",
-    "dist:all": "electron-vite build && electron-builder --mac --win --linux"
+    "dist:all": "electron-vite build && electron-builder --mac --win --linux",
+    "postinstall": "/usr/libexec/PlistBuddy -c \"Set :CFBundleName 'MQTT Explorer'\" -c \"Set :CFBundleDisplayName 'MQTT Explorer'\" node_modules/electron/dist/Electron.app/Contents/Info.plist 2>/dev/null || true; cp build/icon.icns node_modules/electron/dist/Electron.app/Contents/Resources/electron.icns 2>/dev/null || true"
   },
   "dependencies": {
     "chart.js": "^4.4.3",

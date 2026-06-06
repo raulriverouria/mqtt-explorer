@@ -1,6 +1,7 @@
 {
-  "appId": "com.mqttexplorer.app",
+  "appId": "com.mqttexplorer.mac",
   "productName": "MQTT Explorer",
+  "icon": "build/icon.icns",
   "directories": {
     "output": "release"
   },

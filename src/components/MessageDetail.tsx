@@ -1,5 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useMqttStore } from '../store/mqttStore'
+
+// ─── JSON syntax highlighter ────────────────────────────────────────────────
 
 function syntaxHighlightJson(json: string): string {
   const escaped = json
@@ -8,7 +10,7 @@ function syntaxHighlightJson(json: string): string {
     .replace(/>/g, '&gt;')
 
   return escaped.replace(
-    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+    /(\"(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*\"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
     (match) => {
       let cls = 'json-number'
       if (/^"/.test(match)) {
@@ -27,11 +29,99 @@ function syntaxHighlightJson(json: string): string {
   )
 }
 
+// ─── XML syntax highlighter ─────────────────────────────────────────────────
+
+function syntaxHighlightXml(xml: string): string {
+  return xml
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(
+      /(&lt;\/?)([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*\/?&gt;|&gt;|\/&gt;)/g,
+      (_m, open, tag, rest) => {
+        // Highlight attribute names and values inside the rest
+        const highlightedRest = rest
+          .replace(/([\w:.-]+)(\s*=\s*)("([^"]*?)"|'([^']*?)')/g,
+            (_a: string, attrName: string, eq: string, val: string) =>
+              `<span class="xml-attr-name">${attrName}</span>${eq}<span class="xml-attr-value">${val}</span>`
+          )
+        return `<span class="xml-bracket">${open}</span><span class="xml-tag">${tag}</span>${highlightedRest}`
+      }
+    )
+    .replace(/(&gt;)([^&<]+)(&lt;)/g,
+      (_m, o, text, c) => `${o}<span class="xml-text">${text}</span>${c}`
+    )
+}
+
+// ─── XML formatter (pretty-print) ───────────────────────────────────────────
+
+function formatXml(xml: string): string {
+  let formatted = ''
+  let indent = 0
+  const pad = '  '
+
+  xml.replace(/>\s*</g, '><').split(/(<[^>]+>)/).forEach((node) => {
+    if (!node.trim()) return
+
+    if (/^<\//.test(node)) {
+      indent = Math.max(0, indent - 1)
+      formatted += pad.repeat(indent) + node + '\n'
+    } else if (/\/>$/.test(node)) {
+      formatted += pad.repeat(indent) + node + '\n'
+    } else if (/^<[^?!]/.test(node) && !/^<.*\/>/.test(node)) {
+      formatted += pad.repeat(indent) + node + '\n'
+      indent++
+    } else {
+      formatted += pad.repeat(indent) + node + '\n'
+    }
+  })
+
+  return formatted.trim()
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type ViewFormat = 'json' | 'xml' | 'raw'
+
+// ─── Format auto-detection ───────────────────────────────────────────────────
+
+function detectFormat(payload: string): ViewFormat {
+  const trimmed = payload.trim()
+  if (!trimmed) return 'raw'
+
+  // ── Try JSON ──────────────────────────────────────────────────────────────
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      JSON.parse(trimmed)
+      return 'json'
+    } catch {
+      // not valid JSON
+    }
+  }
+
+  // ── Try XML ───────────────────────────────────────────────────────────────
+  // Must start with < (element or declaration) and contain at least one tag
+  if (trimmed.startsWith('<')) {
+    // Quick structural check: has a closing tag or self-closing tag
+    const hasTag = /<[a-zA-Z][\w:.-]*[\s\S]*?>/.test(trimmed)
+    const hasClose = /<\/[a-zA-Z][\w:.-]*>/.test(trimmed) || /\/\s*>/.test(trimmed)
+    if (hasTag && hasClose) {
+      return 'xml'
+    }
+  }
+
+  return 'raw'
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
 export default function MessageDetail() {
   const { selectedTopic, topicTree } = useMqttStore()
   const [copied, setCopied] = useState(false)
   const [clearing, setClearing] = useState(false)
-  const [showRaw, setShowRaw] = useState(false)
+  const [format, setFormat] = useState<ViewFormat>('json')
+  // Track the last payload we auto-detected so we only re-detect on actual changes
+  const lastAutoPayload = useRef<string | null>(null)
 
   // Find the node in the tree to get the latest message details
   const node = useMemo(() => {
@@ -53,28 +143,51 @@ export default function MessageDetail() {
 
   const msg = node?.latestMessage
 
+  // Auto-detect format whenever a new (different) payload arrives
+  useEffect(() => {
+    if (!msg) return
+    if (msg.payload === lastAutoPayload.current) return  // same payload, keep user's choice
+    lastAutoPayload.current = msg.payload
+    setFormat(detectFormat(msg.payload))
+  }, [msg?.payload])
+
   const formattedPayload = useMemo(() => {
-    if (!msg) return { html: '', isJson: false, raw: '' }
+    if (!msg) return { html: '', plain: '', canJson: false, canXml: false }
     const trimmed = msg.payload.trim()
-    if (!showRaw && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+
+    const canJson = trimmed.startsWith('{') || trimmed.startsWith('[')
+    const canXml  = trimmed.startsWith('<')
+
+    if (format === 'json' && canJson) {
       try {
         const parsed = JSON.parse(trimmed)
         const pretty = JSON.stringify(parsed, null, 2)
-        return {
-          html: syntaxHighlightJson(pretty),
-          isJson: true,
-          raw: pretty
-        }
+        return { html: syntaxHighlightJson(pretty), plain: pretty, canJson, canXml }
       } catch {
-        // Fallback to raw if JSON parsing fails
+        // fall through to raw
       }
     }
-    return { html: msg.payload, isJson: false, raw: msg.payload }
-  }, [msg, showRaw])
+
+    if (format === 'xml' && canXml) {
+      try {
+        const pretty = formatXml(trimmed)
+        return { html: syntaxHighlightXml(pretty), plain: pretty, canJson, canXml }
+      } catch {
+        // fall through to raw
+      }
+    }
+
+    // RAW (or fallback)
+    const escaped = msg.payload
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    return { html: escaped, plain: msg.payload, canJson, canXml }
+  }, [msg, format])
 
   const copyToClipboard = () => {
     if (!msg) return
-    navigator.clipboard.writeText(formattedPayload.raw).then(() => {
+    navigator.clipboard.writeText(formattedPayload.plain).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
@@ -126,17 +239,18 @@ export default function MessageDetail() {
                 <span>{new Date(msg.timestamp).toLocaleString()}</span>
               </div>
 
-              <div className="toggle-row" style={{ marginLeft: 'auto', gap: 6 }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Raw</span>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={showRaw}
-                    onChange={e => setShowRaw(e.target.checked)}
-                  />
-                  <span className="toggle-track" />
-                  <span className="toggle-thumb" />
-                </label>
+              {/* Format selector */}
+              <div className="format-selector" role="group" aria-label="View format">
+                {(['json', 'xml', 'raw'] as ViewFormat[]).map((f) => (
+                  <button
+                    key={f}
+                    className={`format-btn${format === f ? ' format-btn--active' : ''}`}
+                    onClick={() => setFormat(f)}
+                    aria-pressed={format === f}
+                  >
+                    {f.toUpperCase()}
+                  </button>
+                ))}
               </div>
 
               {msg.retain && (
@@ -152,14 +266,10 @@ export default function MessageDetail() {
             </div>
 
             <div className="payload-box-wrapper" style={{ position: 'relative' }}>
-              {formattedPayload.isJson ? (
-                <pre
-                  className="payload-box"
-                  dangerouslySetInnerHTML={{ __html: formattedPayload.html }}
-                />
-              ) : (
-                <pre className="payload-box">{formattedPayload.html}</pre>
-              )}
+              <pre
+                className="payload-box"
+                dangerouslySetInnerHTML={{ __html: formattedPayload.html }}
+              />
 
               <button
                 className="btn btn-outline btn-sm payload-copy-btn"
