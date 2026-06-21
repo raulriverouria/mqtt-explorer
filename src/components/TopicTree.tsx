@@ -34,12 +34,11 @@ function TreeNodeComponent({ node, depth }: TreeNodeProps) {
   const hasVisibleChildren = visibleChildren.length > 0
 
   // Stats for badges
-  // node.messageCount already holds the accumulated total for this subtree
-  // (ensureNode increments every ancestor on each incoming message)
+  // node.messageCount holds the accumulated total for the whole subtree
+  // (ensureNode increments every ancestor on each incoming message),
+  // including messages received directly by this node itself.
   const childTopicCount = hasChildren ? countDescendantTopics(node) : 0
-  const childMessageCount = hasChildren
-    ? Array.from(node.children.values()).reduce((sum, child) => sum + child.messageCount, 0)
-    : 0
+  const subtreeMessageCount = node.messageCount
 
   const handleRowClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -108,7 +107,7 @@ function TreeNodeComponent({ node, depth }: TreeNodeProps) {
               {childTopicCount}
             </span>
             <span className="tree-node-badge tree-node-badge-msgs" title="Total messages in subtree">
-              {childMessageCount}
+              {subtreeMessageCount}
             </span>
           </span>
         ) : (
